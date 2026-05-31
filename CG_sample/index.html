@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Компьютерная графика — Лабораторные</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background: #0b0b14;
+      color: #dde0f0;
+      min-height: 100vh;
+      padding: 48px 24px 80px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    header h1 {
+      font-size: clamp(24px, 4vw, 38px);
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin-top: 10px;
+      color: #7878a0;
+      font-size: 15px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #13131f;
+      border: 1px solid #22223a;
+      border-radius: 16px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at top left, var(--glow, transparent) 0%, transparent 65%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .card:hover {
+      border-color: var(--accent, #4444aa);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+
+    .card:hover::before { opacity: 1; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .lab-num {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--num-bg, #1e1e38);
+      border: 1px solid var(--accent, #4444aa);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent, #8888ff);
+      flex-shrink: 0;
+    }
+
+    .lab-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: #f0f0ff;
+      line-height: 1.3;
+    }
+
+    .lab-desc {
+      font-size: 14px;
+      color: #8080a8;
+      line-height: 1.65;
+      flex: 1;
+    }
+
+    .controls-hint {
+      font-size: 12px;
+      color: #55557a;
+      line-height: 1.6;
+    }
+
+    .controls-hint strong {
+      color: #7070a0;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 4px;
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-web {
+      background: #0d1f10;
+      border-color: #2a5a30;
+      color: #50c060;
+    }
+
+    .badge-native {
+      background: #1f0d1f;
+      border-color: #5a2a5a;
+      color: #c060c0;
+    }
+
+    .open-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent, #3a3a8a);
+      color: #fff;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 20px;
+      border-radius: 8px;
+      transition: background 0.15s, opacity 0.15s;
+      white-space: nowrap;
+    }
+
+    .open-btn:hover { filter: brightness(1.2); }
+
+    .open-btn.disabled {
+      background: #1e1e2a;
+      color: #505070;
+      pointer-events: none;
+      cursor: default;
+    }
+
+    .open-btn svg { width: 14px; height: 14px; }
+
+    /* Цветовые темы карточек */
+    .lab3  { --accent: #6070ff; --num-bg: #0d0f28; --glow: rgba(96,112,255,0.08); }
+    .lab4  { --accent: #ff8040; --num-bg: #200d00; --glow: rgba(255,128,64,0.08); }
+    .lab5  { --accent: #40c080; --num-bg: #001510; --glow: rgba(64,192,128,0.08); }
+    .lab6  { --accent: #f04080; --num-bg: #200010; --glow: rgba(240,64,128,0.08); }
+    .lab7  { --accent: #c060ff; --num-bg: #100020; --glow: rgba(192,96,255,0.08); }
+    .lab8  { --accent: #60c0ff; --num-bg: #001020; --glow: rgba(96,192,255,0.08); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Компьютерная графика</h1>
+  <p>Лабораторные работы магистратуры</p>
+</header>
+
+<div class="grid">
+
+  <!-- Лаб 3 -->
+  <div class="card lab3">
+    <div class="card-header">
+      <div class="lab-num">3</div>
+      <div class="lab-title">Освещение</div>
+    </div>
+    <p class="lab-desc">
+      Сцена со снеговиком (Blender) и двумя дополнительными моделями. Точечный источник света, модели Ламберта и Фонга, переключение шейдинга Гуро / Фонг. Регулировка ambient и затухания.
+    </p>
+    <p class="controls-hint">
+      <strong>G/P</strong> — шейдинг · <strong>L</strong> — Ламберт/Фонг · <strong>+/−</strong> — ambient · <strong>I/O</strong> — затухание
+    </p>
+    <div class="card-footer">
+      <span class="badge badge-web">WebGL2</span>
+      <a class="open-btn" href="/Lab3/">
+        Открыть
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Лаб 4 -->
+  <div class="card lab4">
+    <div class="card-header">
+      <div class="lab-num">4</div>
+      <div class="lab-title">Текстурирование</div>
+    </div>
+    <p class="lab-desc">
+      Три кубика-пьедестала с многослойными текстурами: материал (золото, медь, дерево) + цифры с альфой + цвет. Каждый вклад регулируется в реальном времени.
+    </p>
+    <p class="controls-hint">
+      <strong>R/F</strong> — вклад цвета · <strong>T/G</strong> — вклад цифры
+    </p>
+    <div class="card-footer">
+      <span class="badge badge-web">WebGL2</span>
+      <a class="open-btn" href="/Lab4/">
+        Открыть
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Лаб 5 -->
+  <div class="card lab5">
+    <div class="card-header">
+      <div class="lab-num">5</div>
+      <div class="lab-title">Bump &amp; Normal Mapping</div>
+    </div>
+    <p class="lab-desc">
+      Апельсин с bump-mapping из карты высот (градиент яркости → псевдо-нормаль) и куб с готовой normal map в tangent-space. Освещение Фонга.
+    </p>
+    <p class="controls-hint">
+      <strong>1</strong> — апельсин · <strong>2</strong> — куб · <strong>↑/↓</strong> — интенсивность
+    </p>
+    <div class="card-footer">
+      <span class="badge badge-web">WebGL</span>
+      <a class="open-btn" href="/Lab5/">
+        Открыть
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Лаб 6 -->
+  <div class="card lab6">
+    <div class="card-header">
+      <div class="lab-num">6</div>
+      <div class="lab-title">Система частиц</div>
+    </div>
+    <p class="lab-desc">
+      8 режимов: бенгальский огонь, дым, дождь, облака и пар, фейерверки (4 вида взрыва), северное сияние, снег. До 18 000 частиц, рендер через gl.POINTS.
+    </p>
+    <p class="controls-hint">
+      <strong>1–6</strong> — режим · <strong>E</strong> — снег · <strong>Q</strong> — огонь (лекция)
+    </p>
+    <div class="card-footer">
+      <span class="badge badge-web">WebGL</span>
+      <a class="open-btn" href="/Lab6/">
+        Открыть
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Лаб 7 -->
+  <div class="card lab7">
+    <div class="card-header">
+      <div class="lab-num">7</div>
+      <div class="lab-title">Постобработка</div>
+    </div>
+    <p class="lab-desc">
+      Сцена рендерится в off-screen FBO. Постшейдер накладывает Bloom, Vignette, зернистость (Grain) и Color Grading через 3D LUT (.cube). Все параметры анимируются.
+    </p>
+    <p class="controls-hint">
+      Чекбоксы в интерфейсе для каждого эффекта
+    </p>
+    <div class="card-footer">
+      <span class="badge badge-web">WebGL2</span>
+      <a class="open-btn" href="/Lab7/">
+        Открыть
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Лаб 8 -->
+  <div class="card lab8">
+    <div class="card-header">
+      <div class="lab-num">8</div>
+      <div class="lab-title">Программируемая геометрия на GPU</div>
+    </div>
+    <p class="lab-desc">
+      Тесселяция ландшафта (один патч 4 вершины → тысячи треугольников). Адаптивный LOD по расстоянию до камеры, geometry shader для отладки нормалей. C++ / OpenGL 4.1 / SFML.
+    </p>
+    <p class="controls-hint">
+      <strong>WASD</strong> — движение · <strong>мышь</strong> — взгляд · <strong>N</strong> — нормали · <strong>Esc</strong> — выход
+    </p>
+    <div class="card-footer">
+      <span class="badge badge-native">C++ / OpenGL</span>
+      <a class="open-btn" href="/Lab8/">
+        Подробнее
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      </a>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

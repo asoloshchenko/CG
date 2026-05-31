@@ -1,0 +1,614 @@
+import { mat3, mat4 } from "gl-matrix";
+
+const canvas = document.getElementById("glcanvas");
+const info = document.getElementById("info");
+const gl = canvas.getContext("webgl");
+
+if (!gl) {
+	throw new Error("WebGL не поддерживается в этом браузере.");
+}
+
+const VERTEX_SHADER_SOURCE = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec2 aUV;
+attribute vec3 aTangent;
+
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+uniform mat3 uNormalMatrix;
+
+varying vec3 vWorldPos;
+varying vec3 vNormal;
+varying vec2 vUV;
+varying vec3 vTangent;
+
+void main() {
+	vec4 worldPos = uModel * vec4(aPosition, 1.0);
+	vWorldPos = worldPos.xyz;
+	vNormal = normalize(uNormalMatrix * aNormal);
+	vUV = aUV;
+	vTangent = normalize(uNormalMatrix * aTangent);
+	gl_Position = uProjection * uView * worldPos;
+}
+`;
+
+const FRAGMENT_SHADER_SOURCE = `
+precision mediump float;
+
+varying vec3 vWorldPos;
+varying vec3 vNormal;
+varying vec2 vUV;
+varying vec3 vTangent;
+
+uniform sampler2D uDiffuse;
+uniform sampler2D uHeightMap;
+uniform sampler2D uNormalMap;
+uniform vec3 uLightPos;
+uniform vec3 uViewPos;
+uniform vec3 uAmbientColor;
+uniform vec3 uLightColor;
+uniform float uShininess;
+uniform float uDetailStrength;
+uniform vec2 uHeightTexel;
+uniform float uUseNormalMap;
+
+void main() {
+	vec3 normal = normalize(vNormal);
+	vec3 tangent = normalize(vTangent - normal * dot(vTangent, normal));
+	vec3 bitangent = normalize(cross(normal, tangent));
+
+	vec3 shadingNormal;
+	if (uUseNormalMap > 0.5) {
+		vec3 mapNormal = texture2D(uNormalMap, vUV).rgb * 2.0 - 1.0;
+		mapNormal.xy *= uDetailStrength;
+		shadingNormal = normalize(tangent * mapNormal.x + bitangent * mapNormal.y + normal * mapNormal.z);
+	} else {
+		float hC = texture2D(uHeightMap, vUV).r;
+		float hU = texture2D(uHeightMap, vUV + vec2(uHeightTexel.x, 0.0)).r;
+		float hV = texture2D(uHeightMap, vUV + vec2(0.0, uHeightTexel.y)).r;
+
+		float dHdU = (hC - hU) * uDetailStrength;
+		float dHdV = (hC - hV) * uDetailStrength;
+		vec3 bumpNormalTangent = normalize(vec3(dHdU, dHdV, 1.0));
+		shadingNormal = normalize(tangent * bumpNormalTangent.x + bitangent * bumpNormalTangent.y + normal * bumpNormalTangent.z);
+	}
+
+	vec3 lightDir = normalize(uLightPos - vWorldPos);
+	vec3 viewDir = normalize(uViewPos - vWorldPos);
+	vec3 reflectDir = reflect(-lightDir, shadingNormal);
+
+	vec4 texColor = texture2D(uDiffuse, vUV);
+	vec3 ambient = uAmbientColor * texColor.rgb;
+
+	float diff = max(dot(shadingNormal, lightDir), 0.0);
+	vec3 diffuse = diff * texColor.rgb * uLightColor;
+
+	float spec = pow(max(dot(viewDir, reflectDir), 0.0), uShininess);
+	vec3 specular = 0.35 * spec * uLightColor;
+
+	vec3 color = ambient + diffuse + specular;
+	gl_FragColor = vec4(color, texColor.a);
+}
+`;
+
+function createShader(glContext, type, source) {
+	const shader = glContext.createShader(type);
+	glContext.shaderSource(shader, source);
+	glContext.compileShader(shader);
+
+	if (!glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) {
+		const log = glContext.getShaderInfoLog(shader);
+		glContext.deleteShader(shader);
+		throw new Error("Ошибка компиляции шейдера: " + log);
+	}
+
+	return shader;
+}
+
+function createProgram(glContext, vertexSource, fragmentSource) {
+	const vertexShader = createShader(glContext, glContext.VERTEX_SHADER, vertexSource);
+	const fragmentShader = createShader(glContext, glContext.FRAGMENT_SHADER, fragmentSource);
+
+	const program = glContext.createProgram();
+	glContext.attachShader(program, vertexShader);
+	glContext.attachShader(program, fragmentShader);
+	glContext.linkProgram(program);
+
+	if (!glContext.getProgramParameter(program, glContext.LINK_STATUS)) {
+		const log = glContext.getProgramInfoLog(program);
+		glContext.deleteProgram(program);
+		throw new Error("Ошибка линковки программы: " + log);
+	}
+
+	return program;
+}
+
+function clamp(value, min, max) {
+	return Math.max(min, Math.min(max, value));
+}
+
+function loadTexture(glContext, url, flipY = true) {
+	return new Promise((resolve, reject) => {
+		const texture = glContext.createTexture();
+		glContext.bindTexture(glContext.TEXTURE_2D, texture);
+		glContext.texImage2D(
+			glContext.TEXTURE_2D,
+			0,
+			glContext.RGBA,
+			1,
+			1,
+			0,
+			glContext.RGBA,
+			glContext.UNSIGNED_BYTE,
+			new Uint8Array([255, 255, 255, 255])
+		);
+
+		const image = new Image();
+		image.onload = () => {
+			glContext.bindTexture(glContext.TEXTURE_2D, texture);
+			glContext.pixelStorei(glContext.UNPACK_FLIP_Y_WEBGL, flipY ? 1 : 0);
+			glContext.texImage2D(
+				glContext.TEXTURE_2D,
+				0,
+				glContext.RGBA,
+				glContext.RGBA,
+				glContext.UNSIGNED_BYTE,
+				image
+			);
+
+			const isPowerOfTwo = (n) => (n & (n - 1)) === 0;
+			if (isPowerOfTwo(image.width) && isPowerOfTwo(image.height)) {
+				glContext.generateMipmap(glContext.TEXTURE_2D);
+				glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MIN_FILTER, glContext.LINEAR_MIPMAP_LINEAR);
+			} else {
+				glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, glContext.CLAMP_TO_EDGE);
+				glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, glContext.CLAMP_TO_EDGE);
+				glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MIN_FILTER, glContext.LINEAR);
+			}
+
+			glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MAG_FILTER, glContext.LINEAR);
+			resolve(texture);
+		};
+
+		image.onerror = () => reject(new Error("Не удалось загрузить текстуру: " + url));
+		image.src = url;
+	});
+}
+
+function generateUVFromPosition(position) {
+	const x = position[0];
+	const y = position[1];
+	const z = position[2];
+	const u = 0.5 + Math.atan2(z, x) / (2 * Math.PI);
+	const v = 0.5 - Math.asin(Math.max(-1, Math.min(1, y))) / Math.PI;
+	return [u, v];
+}
+
+function parseOBJ(text) {
+	const positions = [];
+	const normals = [];
+	const uvs = [];
+
+	const finalPositions = [];
+	const finalNormals = [];
+	const finalUVs = [];
+	const indices = [];
+	const vertexMap = new Map();
+
+	const lines = text.split(/\r?\n/);
+
+	function resolveIndex(index, arrayLength) {
+		return index >= 0 ? index - 1 : arrayLength + index;
+	}
+
+	function pushVertex(token) {
+		let mapped = vertexMap.get(token);
+		if (mapped !== undefined) {
+			return mapped;
+		}
+
+		const parts = token.split("/");
+		const pIndex = resolveIndex(parseInt(parts[0], 10), positions.length);
+		const tIndex = parts[1] ? resolveIndex(parseInt(parts[1], 10), uvs.length) : -1;
+		const nIndex = parts[2] ? resolveIndex(parseInt(parts[2], 10), normals.length) : -1;
+
+		const p = positions[pIndex];
+		const n = nIndex >= 0 ? normals[nIndex] : [p[0], p[1], p[2]];
+		const uv = tIndex >= 0 && uvs[tIndex] ? uvs[tIndex] : generateUVFromPosition(p);
+
+		finalPositions.push(p[0], p[1], p[2]);
+		finalNormals.push(n[0], n[1], n[2]);
+		finalUVs.push(uv[0], uv[1]);
+
+		mapped = finalPositions.length / 3 - 1;
+		vertexMap.set(token, mapped);
+		return mapped;
+	}
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line || line.startsWith("#")) {
+			continue;
+		}
+
+		const parts = line.split(/\s+/);
+		const type = parts[0];
+
+		if (type === "v") {
+			positions.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+		} else if (type === "vn") {
+			normals.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+		} else if (type === "vt") {
+			uvs.push([parseFloat(parts[1]), parseFloat(parts[2])]);
+		} else if (type === "f") {
+			const verts = parts.slice(1);
+			for (let i = 1; i < verts.length - 1; i += 1) {
+				const i0 = pushVertex(verts[0]);
+				const i1 = pushVertex(verts[i]);
+				const i2 = pushVertex(verts[i + 1]);
+				indices.push(i0, i1, i2);
+			}
+		}
+	}
+
+	return {
+		positions: new Float32Array(finalPositions),
+		normals: new Float32Array(finalNormals),
+		uvs: new Float32Array(finalUVs),
+		indices: new Uint16Array(indices),
+		tangents: buildTangents(new Float32Array(finalPositions), new Float32Array(finalNormals), new Float32Array(finalUVs), new Uint16Array(indices))
+	};
+}
+
+function buildTangents(positions, normals, uvs, indices) {
+	const vertexCount = positions.length / 3;
+	const tanAccum = new Float32Array(vertexCount * 3);
+
+	for (let i = 0; i < indices.length; i += 3) {
+		const i0 = indices[i];
+		const i1 = indices[i + 1];
+		const i2 = indices[i + 2];
+
+		const p0x = positions[i0 * 3 + 0];
+		const p0y = positions[i0 * 3 + 1];
+		const p0z = positions[i0 * 3 + 2];
+		const p1x = positions[i1 * 3 + 0];
+		const p1y = positions[i1 * 3 + 1];
+		const p1z = positions[i1 * 3 + 2];
+		const p2x = positions[i2 * 3 + 0];
+		const p2y = positions[i2 * 3 + 1];
+		const p2z = positions[i2 * 3 + 2];
+
+		const uv0x = uvs[i0 * 2 + 0];
+		const uv0y = uvs[i0 * 2 + 1];
+		const uv1x = uvs[i1 * 2 + 0];
+		const uv1y = uvs[i1 * 2 + 1];
+		const uv2x = uvs[i2 * 2 + 0];
+		const uv2y = uvs[i2 * 2 + 1];
+
+		const e1x = p1x - p0x;
+		const e1y = p1y - p0y;
+		const e1z = p1z - p0z;
+		const e2x = p2x - p0x;
+		const e2y = p2y - p0y;
+		const e2z = p2z - p0z;
+
+		const dUV1x = uv1x - uv0x;
+		const dUV1y = uv1y - uv0y;
+		const dUV2x = uv2x - uv0x;
+		const dUV2y = uv2y - uv0y;
+
+		const det = dUV1x * dUV2y - dUV1y * dUV2x;
+		if (Math.abs(det) < 1e-8) {
+			continue;
+		}
+
+		const invDet = 1.0 / det;
+		const tx = invDet * (dUV2y * e1x - dUV1y * e2x);
+		const ty = invDet * (dUV2y * e1y - dUV1y * e2y);
+		const tz = invDet * (dUV2y * e1z - dUV1y * e2z);
+
+		tanAccum[i0 * 3 + 0] += tx;
+		tanAccum[i0 * 3 + 1] += ty;
+		tanAccum[i0 * 3 + 2] += tz;
+		tanAccum[i1 * 3 + 0] += tx;
+		tanAccum[i1 * 3 + 1] += ty;
+		tanAccum[i1 * 3 + 2] += tz;
+		tanAccum[i2 * 3 + 0] += tx;
+		tanAccum[i2 * 3 + 1] += ty;
+		tanAccum[i2 * 3 + 2] += tz;
+	}
+
+	const tangents = new Float32Array(vertexCount * 3);
+	for (let i = 0; i < vertexCount; i += 1) {
+		const nx = normals[i * 3 + 0];
+		const ny = normals[i * 3 + 1];
+		const nz = normals[i * 3 + 2];
+
+		let tx = tanAccum[i * 3 + 0];
+		let ty = tanAccum[i * 3 + 1];
+		let tz = tanAccum[i * 3 + 2];
+
+		const ndott = nx * tx + ny * ty + nz * tz;
+		tx -= nx * ndott;
+		ty -= ny * ndott;
+		tz -= nz * ndott;
+
+		let len = Math.hypot(tx, ty, tz);
+		if (len < 1e-6) {
+			if (Math.abs(ny) < 0.99) {
+				tx = -nz;
+				ty = 0;
+				tz = nx;
+			} else {
+				tx = 1;
+				ty = 0;
+				tz = 0;
+			}
+			len = Math.hypot(tx, ty, tz);
+		}
+
+		tangents[i * 3 + 0] = tx / len;
+		tangents[i * 3 + 1] = ty / len;
+		tangents[i * 3 + 2] = tz / len;
+	}
+
+	return tangents;
+}
+
+function createBuffer(glContext, target, data, usage) {
+	const buffer = glContext.createBuffer();
+	glContext.bindBuffer(target, buffer);
+	glContext.bufferData(target, data, usage);
+	return buffer;
+}
+
+async function init() {
+	// MODELS
+	const sphereObjText = await fetch("models/sphere.obj").then((r) => {
+		if (!r.ok) {
+			throw new Error("Не удалось загрузить sphere.obj: " + r.status);
+		}
+		return r.text();
+	});
+
+	const sphereMesh = parseOBJ(sphereObjText);
+	if (sphereMesh.indices.length > 65535) {
+		throw new Error("Слишком много индексов для Uint16, нужен OES_element_index_uint.");
+	}
+
+	const program = createProgram(gl, VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
+	gl.useProgram(program);
+
+	const aPosition = gl.getAttribLocation(program, "aPosition");
+	const aNormal = gl.getAttribLocation(program, "aNormal");
+	const aUV = gl.getAttribLocation(program, "aUV");
+	const aTangent = gl.getAttribLocation(program, "aTangent");
+
+	gl.enableVertexAttribArray(aPosition);
+	gl.enableVertexAttribArray(aNormal);
+	gl.enableVertexAttribArray(aUV);
+	gl.enableVertexAttribArray(aTangent);
+
+	function createMeshBuffers(mesh) {
+		return {
+			positionBuffer: createBuffer(gl, gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW),
+			normalBuffer: createBuffer(gl, gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW),
+			uvBuffer: createBuffer(gl, gl.ARRAY_BUFFER, mesh.uvs, gl.STATIC_DRAW),
+			tangentBuffer: createBuffer(gl, gl.ARRAY_BUFFER, mesh.tangents, gl.STATIC_DRAW),
+			indexBuffer: createBuffer(gl, gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW),
+			indexCount: mesh.indices.length
+		};
+	}
+
+	function bindMeshBuffers(meshBuffers) {
+		gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffers.positionBuffer);
+		gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffers.normalBuffer);
+		gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffers.uvBuffer);
+		gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffers.tangentBuffer);
+		gl.vertexAttribPointer(aTangent, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, meshBuffers.indexBuffer);
+	}
+
+	// TEXTURES
+	const [orangeDiffuse, orangeHeight, rockDiffuse, rockNormal, rockHeight] = await Promise.all([
+		loadTexture(gl, "textures/Orange.png"),
+		loadTexture(gl, "textures/food_0022_ao_1k.jpg"),
+		loadTexture(gl, "textures/Rock058_1K-PNG_Color.png"),
+		loadTexture(gl, "textures/Rock058_1K-PNG_NormalGL.png"),
+		loadTexture(gl, "textures/Rock058_1K-PNG_Displacement.png")
+	]);
+
+	const sphereBuffers = createMeshBuffers(sphereMesh);
+
+	const models = {
+		orange: {
+			mesh: sphereBuffers,
+			diffuseTexture: orangeDiffuse,
+			heightTexture: orangeHeight,
+			normalTexture: rockNormal,
+			useNormalMap: 0.0,
+			heightTexel: new Float32Array([1 / 1024, 1 / 1024]),
+			detailStrength: 3.0,
+			minStrength: 0.0,
+			maxStrength: 6.0,
+			strengthStep: 0.2,
+			scale: 1.0,
+			label: "Апельсин (bump map)"
+		},
+		rock: {
+			mesh: sphereBuffers,
+			diffuseTexture: rockDiffuse,
+			heightTexture: rockHeight,
+			normalTexture: rockNormal,
+			useNormalMap: 1.0,
+			heightTexel: new Float32Array([1 / 1024, 1 / 1024]),
+			detailStrength: 1.0,
+			minStrength: 0.0,
+			maxStrength: 3.0,
+			strengthStep: 0.1,
+			scale: 1.0,
+			label: "Камень (normal map)"
+		}
+	};
+
+	let activeModelKey = "orange";
+
+	const uModel = gl.getUniformLocation(program, "uModel");
+	const uView = gl.getUniformLocation(program, "uView");
+	const uProjection = gl.getUniformLocation(program, "uProjection");
+	const uNormalMatrix = gl.getUniformLocation(program, "uNormalMatrix");
+	const uDiffuse = gl.getUniformLocation(program, "uDiffuse");
+	const uHeightMap = gl.getUniformLocation(program, "uHeightMap");
+	const uNormalMap = gl.getUniformLocation(program, "uNormalMap");
+	const uLightPos = gl.getUniformLocation(program, "uLightPos");
+	const uViewPos = gl.getUniformLocation(program, "uViewPos");
+	const uAmbientColor = gl.getUniformLocation(program, "uAmbientColor");
+	const uLightColor = gl.getUniformLocation(program, "uLightColor");
+	const uShininess = gl.getUniformLocation(program, "uShininess");
+	const uDetailStrength = gl.getUniformLocation(program, "uDetailStrength");
+	const uHeightTexel = gl.getUniformLocation(program, "uHeightTexel");
+	const uUseNormalMap = gl.getUniformLocation(program, "uUseNormalMap");
+
+	const model = new Float32Array(16);
+	const view = new Float32Array(16);
+	const projection = new Float32Array(16);
+	const normalMatrix = new Float32Array(9);
+
+	const cameraPos = [0, 0.3, 3.2];
+	const lightPos = [2.5, 2.0, 2.0];
+
+	function resize() {
+		const dpr = window.devicePixelRatio || 1;
+		const width = Math.floor(window.innerWidth * dpr);
+		const height = Math.floor(window.innerHeight * dpr);
+		if (canvas.width !== width || canvas.height !== height) {
+			canvas.width = width;
+			canvas.height = height;
+			gl.viewport(0, 0, width, height);
+		}
+	}
+
+	window.addEventListener("resize", resize);
+	resize();
+
+	gl.enable(gl.DEPTH_TEST);
+	gl.clearColor(0.05, 0.06, 0.09, 1.0);
+
+	gl.uniform1i(uDiffuse, 0);
+	gl.uniform1i(uHeightMap, 1);
+	gl.uniform1i(uNormalMap, 2);
+	gl.uniform3fv(uLightPos, lightPos);
+	gl.uniform3fv(uViewPos, cameraPos);
+	gl.uniform3fv(uAmbientColor, new Float32Array([0.2, 0.2, 0.2]));
+	gl.uniform3fv(uLightColor, new Float32Array([1.0, 1.0, 1.0]));
+	gl.uniform1f(uShininess, 48.0);
+
+	mat4.lookAt(view, cameraPos, [0, 0, 0], [0, 1, 0]);
+	gl.uniformMatrix4fv(uView, false, view);
+
+	function getActiveModel() {
+		return models[activeModelKey];
+	}
+
+	function updateInfoText(activeModel) {
+		info.innerHTML =
+			"Текущий: <b>" + activeModel.label + "</b>" +
+			" | Интенсивность: " + activeModel.detailStrength.toFixed(2) +
+			" (" + activeModel.minStrength.toFixed(1) + ".." + activeModel.maxStrength.toFixed(1) + ")" +
+			"<br><span style=\"opacity:0.75;font-size:12px\">" +
+			"1 — апельсин (bump) · 2 — камень (normal) · ↑/↓ — интенсивность" +
+			"</span>";
+	}
+
+	function applyActiveModel() {
+		const activeModel = getActiveModel();
+
+		bindMeshBuffers(activeModel.mesh);
+
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, activeModel.diffuseTexture);
+
+		gl.activeTexture(gl.TEXTURE1);
+		gl.bindTexture(gl.TEXTURE_2D, activeModel.heightTexture);
+
+		gl.activeTexture(gl.TEXTURE2);
+		gl.bindTexture(gl.TEXTURE_2D, activeModel.normalTexture);
+
+		gl.uniform1f(uUseNormalMap, activeModel.useNormalMap);
+		gl.uniform1f(uDetailStrength, activeModel.detailStrength);
+		gl.uniform2fv(uHeightTexel, activeModel.heightTexel);
+
+		updateInfoText(activeModel);
+	}
+
+	function changeActiveModel(nextKey) {
+		activeModelKey = nextKey;
+		applyActiveModel();
+	}
+
+	function changeDetailStrength(delta) {
+		const activeModel = getActiveModel();
+		activeModel.detailStrength = clamp(
+			activeModel.detailStrength + delta,
+			activeModel.minStrength,
+			activeModel.maxStrength
+		);
+		gl.uniform1f(uDetailStrength, activeModel.detailStrength);
+		updateInfoText(activeModel);
+		console.log("Detail strength:", activeModel.detailStrength.toFixed(2));
+	}
+
+	function handleKeyDown(e) {
+		if (e.key === "1") {
+			changeActiveModel("orange");
+		} else if (e.key === "2") {
+			changeActiveModel("rock");
+		} else if (e.key === "ArrowUp") {
+			changeDetailStrength(getActiveModel().strengthStep);
+		} else if (e.key === "ArrowDown") {
+			changeDetailStrength(-getActiveModel().strengthStep);
+		}
+	}
+
+	applyActiveModel();
+	window.addEventListener("keydown", handleKeyDown);
+
+	function render(timeMs) {
+		resize();
+
+		const aspect = canvas.width / canvas.height;
+		mat4.perspective(projection, (45 * Math.PI) / 180, aspect, 0.1, 100.0);
+		gl.uniformMatrix4fv(uProjection, false, projection);
+
+		const t = timeMs * 0.001;
+		const activeModel = getActiveModel();
+		mat4.identity(model);
+		mat4.rotateY(model, model, t * 0.1);
+		mat4.scale(model, model, [activeModel.scale, activeModel.scale, activeModel.scale]);
+		gl.uniformMatrix4fv(uModel, false, model);
+
+		mat3.fromMat4(normalMatrix, model);
+		gl.uniformMatrix3fv(uNormalMatrix, false, normalMatrix);
+
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.drawElements(gl.TRIANGLES, activeModel.mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+		requestAnimationFrame(render);
+	}
+
+	requestAnimationFrame(render);
+}
+
+init().catch((err) => {
+	console.error(err);
+	info.textContent = "Ошибка: " + err.message;
+});
