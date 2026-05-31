@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Лаб 3 — Освещение</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+
+        #ui {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: rgba(10, 10, 20, 0.85);
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 16px 20px;
+            color: #ccd;
+            font: 13px/1.6 monospace;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 220px;
+        }
+
+        #ui h3 {
+            color: #fff;
+            font-size: 14px;
+            border-bottom: 1px solid #2a2a4a;
+            padding-bottom: 8px;
+            margin-bottom: 2px;
+        }
+
+        .row { display: flex; flex-direction: column; gap: 4px; }
+
+        .row label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .row span { color: #88f; font-size: 12px; }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #6070ff;
+        }
+
+        .toggle {
+            display: flex;
+            gap: 8px;
+        }
+
+        .toggle button {
+            flex: 1;
+            padding: 6px;
+            border-radius: 6px;
+            border: 1px solid #3a3a6a;
+            background: #13131f;
+            color: #88a;
+            cursor: pointer;
+            font: 12px monospace;
+            transition: all 0.15s;
+        }
+
+        .toggle button.active {
+            background: #6070ff;
+            border-color: #6070ff;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+
+    <div id="ui">
+        <h3>Освещение</h3>
+
+        <div class="row">
+            <label>Интерполяция</label>
+            <div class="toggle">
+                <button id="btn-phong" class="active">Фонг</button>
+                <button id="btn-guro">Гуро</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <label>Модель освещения</label>
+            <div class="toggle">
+                <button id="btn-light-phong" class="active">Фонг</button>
+                <button id="btn-light-lambert">Ламберт</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <label>
+                Ambient
+                <span id="val-ambient">0.20</span>
+            </label>
+            <input type="range" id="sl-ambient" min="0" max="1" step="0.01" value="0.2">
+        </div>
+
+        <div class="row">
+            <label>
+                Линейное затухание
+                <span id="val-atten-lin">0.09</span>
+            </label>
+            <input type="range" id="sl-atten-lin" min="0" max="1" step="0.01" value="0.09">
+        </div>
+
+        <div class="row">
+            <label>
+                Квадратичное затухание
+                <span id="val-atten-quad">0.032</span>
+            </label>
+            <input type="range" id="sl-atten-quad" min="0" max="0.5" step="0.001" value="0.032">
+        </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
