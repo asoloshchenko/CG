@@ -17,7 +17,7 @@ export default defineConfig({
             input: {
                 main: resolve(__dirname, 'index.html'),
                 lab3: resolve(__dirname, 'Lab3/index.html'),
-                // lab4: resolve(__dirname, 'Lab4/index.html'),
+                lab4: resolve(__dirname, 'Lab4/index.html'),
             },
         },
     },

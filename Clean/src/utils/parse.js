@@ -74,10 +74,11 @@ export function parseOBJ(text) {
         }
         // g, o, s, usemtl, mtllib — игнорируем
     }
+    let verts =  new Float32Array(vertexData);
 
     return {
         // Interleaved буфер: позиция(3) + нормаль(3) + uv(2)
-        vertices: new Float32Array(vertexData),
+        vertices: verts,
         indices:  new Uint32Array(indices),
 
         // Мета для gl.vertexAttribPointer
@@ -87,6 +88,7 @@ export function parseOBJ(text) {
             normal:   3 * 4,      // байт
             uv:       6 * 4,      // байт
         },
+        count: verts.length / 6
     };
 }
 
