@@ -305,6 +305,8 @@ const model = mat4.create();
 
 mat4.lookAt(view, [0, 2, 7], [0, 0, 0], [0, 1, 0]);
 
+
+const BASE_COLOR = [0,1,1]
 // ── Рендер-цикл ───────────────────────────────────────────────────────────────
 
 function render() {
@@ -329,7 +331,7 @@ function render() {
         gl.uniformMatrix4fv(uPhong.view, false, view);
         gl.uniformMatrix4fv(uPhong.proj, false, proj);
         gl.uniform3fv(uPhong.lightPosEye,           lightPosEye);
-        gl.uniform3f(uPhong.color,               0.95, 0.97, 1.0);
+        gl.uniform3f(uPhong.color,               ...BASE_COLOR);
         gl.uniform3f(uPhong.ambientLightColor,   a,    a,    a);
         gl.uniform3f(uPhong.diffuseLightColor,   0.8,  0.8,  0.8);
         gl.uniform3f(uPhong.specularLightColor,  1.0,  1.0,  1.0);
@@ -341,7 +343,7 @@ function render() {
         gl.uniformMatrix4fv(uGuro.view, false, view);
         gl.uniformMatrix4fv(uGuro.proj, false, proj);
         gl.uniform3f(uGuro.lightPos,             ...LIGHT_POS);
-        gl.uniform3f(uGuro.color,                0.95, 0.97, 1.0);
+        gl.uniform3f(uGuro.color,                ...BASE_COLOR);
         gl.uniform3f(uGuro.ambientLightColor,    a,    a,    a);
         gl.uniform3f(uGuro.diffuseLightColor,    0.8,  0.8,  0.8);
         gl.uniform3f(uGuro.specularLightColor,   1.0,  1.0,  1.0);
